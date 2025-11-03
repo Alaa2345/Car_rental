@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Confirmation · Car Rental{% endblock %}
+{% block content %}
+  <h2>Reservation Confirmed</h2>
+  <p><strong>Reference:</strong> {{ r.ref }}</p>
+  <p><strong>Car:</strong> {{ r.car.label() }} ({{ r.car.location }})</p>
+  <p><strong>Name:</strong> {{ r.name }}</p>
+  <p><strong>Email:</strong> {{ r.email }}</p>
+  <p><strong>Pick-up:</strong> {{ r.pickup_date.strftime('%Y-%m-%d') }}</p>
+  <p><strong>Drop-off:</strong> {{ r.dropoff_date.strftime('%Y-%m-%d') }}</p>
+  <p><a href="{{ url_for('index') }}">Back to search</a></p>
+{% endblock %}

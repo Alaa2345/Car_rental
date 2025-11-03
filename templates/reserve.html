@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Reserve · Car Rental{% endblock %}
+{% block content %}
+
+{% if error %}
+  <div class="alert">{{ error }}</div>
+{% endif %}
+
+<form class="reserve-form" method="post" action="{{ url_for('reserve_submit') }}">
+  <!-- Vehicle -->
+  <div class="field">
+    <label for="car_id">Vehicle</label>
+    <select id="car_id" name="car_id" required>
+      {% for c in cars %}
+        <option value="{{ c.id }}"
+          {% if (car and c.id == car.id) or (form and (form.get('car_id')|int) == c.id) %}selected{% endif %}>
+          {{ c.label() }} — {{ c.location }} — ${{ '%.2f'|format(c.price_per_day) }}/day
+          {% if not c.available %}(unavailable){% endif %}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <!-- Name -->
+  <div class="field">
+    <label for="name">Your name</label>
+    <input id="name" type="text" name="name" value="{{ (form and form.get('name')) or '' }}" required />
+  </div>
+
+  <!-- Email -->
+  <div class="field">
+    <label for="email">Email</label>
+    <input id="email" type="email" name="email" value="{{ (form and form.get('email')) or '' }}" required />
+  </div>
+
+  <!-- Pickup -->
+  <div class="field">
+    <label for="pickup_date">Pick-up date</label>
+    <input id="pickup_date" type="date" name="pickup_date" value="{{ (form and form.get('pickup_date')) or '' }}" required />
+  </div>
+
+  <!-- Dropoff -->
+  <div class="field">
+    <label for="dropoff_date">Drop-off date</label>
+    <input id="dropoff_date" type="date" name="dropoff_date" value="{{ (form and form.get('dropoff_date')) or '' }}" required />
+  </div>
+
+  <!-- Spacer to keep grid aligned -->
+  <div class="field spacer"></div>
+
+  <!-- Submit -->
+  <div class="actions">
+    <button type="submit">Reserve</button>
+  </div>
+</form>
+
+{% endblock %}

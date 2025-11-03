@@ -1,0 +1,55 @@
+﻿{% extends "base.html" %}
+{% block title %}Search Cars · Car Rental{% endblock %}
+
+{% block content %}
+<form class="grid-form" method="get" action="{{ url_for('index') }}">
+  <input type="text" name="q" value="{{ request.args.get('q','') }}" placeholder="Make / model / year" />
+  <input type="text" name="location" value="{{ request.args.get('location','') }}" placeholder="Location" />
+  <input type="number" step="0.01" name="min_price" value="{{ request.args.get('min_price','') }}" placeholder="Min price/day" />
+  <input type="number" step="0.01" name="max_price" value="{{ request.args.get('max_price','') }}" placeholder="Max price/day" />
+
+  <select name="available">
+    {% set avail = request.args.get('available','') %}
+    <option value="" {% if avail=='' %}selected{% endif %}>Availability (any)</option>
+    <option value="true" {% if avail=='true' %}selected{% endif %}>Available</option>
+    <option value="false" {% if avail=='false' %}selected{% endif %}>Unavailable</option>
+  </select>
+
+  <button type="submit">Search</button>
+</form>
+
+{% if cars %}
+<table class="table">
+  <thead>
+    <tr>
+      <th>Vehicle</th>
+      <th>Location</th>
+      <th class="price">Price/Day</th>
+      <th>Status</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for c in cars %}
+    <tr>
+      <td>{{ c.year }} {{ c.make }} {{ c.model }}</td>
+      <td>{{ c.location }}</td>
+      <td class="price">${{ '%.2f'|format(c.price_per_day) }}</td>
+      <td>{{ 'Available' if c.available else 'Unavailable' }}</td>
+      <td>
+        {% if c.available %}
+          <a href="{{ url_for('reserve_form', car_id=c.id) }}">Reserve</a>
+        {% else %}
+          —
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+  <p>No cars matched your filters.</p>
+{% endif %}
+
+<p class="muted small">API: <code>/api/cars</code> returns JSON and supports the same query parameters.</p>
+{% endblock %}

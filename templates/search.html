@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<h3>Search Cars</h3>
+<form method="get" class="row">
+  <input type="text" name="category" placeholder="Category (e.g., SUV)" value="{{ request.args.get('category','') }}">
+  <input type="text" name="max_price" placeholder="Max price/day" value="{{ request.args.get('max_price','') }}">
+  <button type="submit">Search</button>
+</form>
+
+<table>
+  <thead><tr><th>Make</th><th>Model</th><th>Category</th><th>Price/day</th><th></th></tr></thead>
+  <tbody>
+    {% for c in cars %}
+      <tr>
+        <td>{{ c.make }}</td>
+        <td>{{ c.model }}</td>
+        <td>{{ c.category }}</td>
+        <td>${{ '%.2f'|format(c.price_per_day) }}</td>
+        <td><a class="button" href="{{ url_for('reserve_form', car_id=c.id) }}">Reserve</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5">No cars found (try clearing filters).</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

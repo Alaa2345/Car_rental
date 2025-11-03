@@ -1,0 +1,30 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>{% block title %}Car Rental{% endblock %}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="container">
+    <h1 class="app-title">Car Rental</h1>
+    <p class="muted">Total cars in database: {{ total }}</p>
+    <nav class="muted small">
+      <a href="{{ url_for('index') }}">Home</a> ·
+      <a href="{{ url_for('list_cars') }}">/api/cars</a>
+    </nav>
+    <hr class="divider">
+  </header>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="container muted small">
+    <hr class="divider">
+    <p>Sample app for demo purposes.</p>
+  </footer>
+</body>
+</html>
