@@ -9,6 +9,9 @@ import click
 
 app = Flask(__name__)
 
+# Secret key for session management
+app.secret_key = os.environ.get("SECRET_KEY", "dev_secret_key_change_me")
+
 # ---- Database config ----------------------------------------------------------
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
     "SQLALCHEMY_DATABASE_URI", "sqlite:///carrental.db"
