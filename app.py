@@ -1,5 +1,7 @@
 # app.py
 from flask import Flask, render_template, request, jsonify, redirect, url_for, abort
+from flask import session, flash
+from werkzeug.security import generate_password_hash, check_password_hash
 from flask_sqlalchemy import SQLAlchemy
 import os, uuid
 from datetime import datetime
@@ -47,6 +49,7 @@ class Reservation(db.Model):
     pickup_date = db.Column(db.Date, nullable=False)
     dropoff_date = db.Column(db.Date, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    status = db.Column(db.String(20), default='Confirmed')  # NEW: Tracks active, cancelled bookings
 
     car = db.relationship("Car")
 
@@ -55,6 +58,13 @@ class Account(db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     phone = db.Column(db.String(20))
+    password_hash = db.Column(db.String(128), nullable=False)
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
 
 # ---- Filtering helper (used by / and /cars) ----------------------------------
 def apply_filters(query):
@@ -95,23 +105,52 @@ def index():
     cars = apply_filters(Car.query).order_by(Car.price_per_day.asc()).all()
     return render_template("index.html", total=total, cars=cars)
 
+# Login Route
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form["username"]
+        password = request.form["password"]
+
+        user = Account.query.filter_by(username=username).first()
+
+        if user and user.check_password(password):
+            session["user_id"] = user.id
+            flash("Logged in successfully!", "success")
+            return redirect(url_for("account"))
+        else:
+            flash("Invalid username or password.", "error")
+
+    return render_template("login.html")
+
+# Logout Route
+@app.route("/logout")
+def logout():
+    session.pop("user_id", None)
+    flash("You have been logged out.", "info")
+    return redirect(url_for("login"))
+
 # Account Management Route
 @app.route("/account", methods=["GET", "POST"])
 def account():
-    user = Account.query.first()  # in the future, this would be the logged-in user
+    user_id = session.get("user_id")
+    if not user_id:
+        flash("Please log in to access your account.", "warning")
+        return redirect(url_for("login"))
 
+    user = Account.query.get(user_id)
     if not user:
-        #flash("No user found.")
-        return redirect(url_for("index"))
+        flash("User not found.", "error")
+        return redirect(url_for("login"))
 
     if request.method == "POST":
         user.username = request.form["username"]
         user.email = request.form["email"]
         user.phone = request.form["phone"]
         db.session.commit()
-       # flash("✔ Account updated successfully!", "success")
+        flash("Account updated successfully!", "success")
 
-    total = Car.query.count() if 'Car' in globals() else 0
+    total = Car.query.count()
     return render_template("account.html", user=user, total=total)
 
 # Reservation form (GET)
@@ -248,6 +287,25 @@ def seed():
     db.session.add_all(sample)
     db.session.commit()
     click.echo(f"✔ Seeded {len(sample)} cars")
+
+@app.cli.command("create-demo-user")
+def create_demo_user():
+    """Create a demo login account."""
+    with app.app_context():
+        if Account.query.filter_by(username="demo").first():
+            click.echo("Demo account already exists.")
+        else:
+            u = Account(username="demo", email="demo@email.com", phone="1234567890")
+            u.set_password("password123")
+            db.session.add(u)
+            db.session.commit()
+            click.echo("Demo account created (username: demo, password: password123).")
+
+@app.context_processor
+def inject_user():
+    user_id = session.get("user_id")
+    user = Account.query.get(user_id) if user_id else None
+    return dict(current_user=user)
 
 if __name__ == "__main__":
     app.run(debug=True)

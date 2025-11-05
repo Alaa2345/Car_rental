@@ -14,7 +14,14 @@
     <nav class="muted small">
       <a href="{{ url_for('index') }}">Home</a> ·
       <a href="{{ url_for('list_cars') }}">/api/cars</a>
-      <a href="{{ url_for('account') }}">Account</a>
+
+  {% if current_user %}
+    <a href="{{ url_for('account') }}">Account ({{ current_user.username }})</a> ·
+    <a href="{{ url_for('logout') }}">Logout</a>
+  {% else %}
+    <a href="{{ url_for('login') }}">Login</a>
+  {% endif %}
+  
     </nav>
     <hr class="divider">
   </header>
