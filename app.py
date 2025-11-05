@@ -50,6 +50,12 @@ class Reservation(db.Model):
 
     car = db.relationship("Car")
 
+class Account(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    phone = db.Column(db.String(20))
+
 # ---- Filtering helper (used by / and /cars) ----------------------------------
 def apply_filters(query):
     from sqlalchemy import or_, cast, String
@@ -88,6 +94,25 @@ def index():
     total = Car.query.count()
     cars = apply_filters(Car.query).order_by(Car.price_per_day.asc()).all()
     return render_template("index.html", total=total, cars=cars)
+
+# Account Management Route
+@app.route("/account", methods=["GET", "POST"])
+def account():
+    user = Account.query.first()  # in the future, this would be the logged-in user
+
+    if not user:
+        #flash("No user found.")
+        return redirect(url_for("index"))
+
+    if request.method == "POST":
+        user.username = request.form["username"]
+        user.email = request.form["email"]
+        user.phone = request.form["phone"]
+        db.session.commit()
+       # flash("✔ Account updated successfully!", "success")
+
+    total = Car.query.count() if 'Car' in globals() else 0
+    return render_template("account.html", user=user, total=total)
 
 # Reservation form (GET)
 @app.get("/reserve")
