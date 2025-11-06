@@ -10,7 +10,7 @@ import click
 app = Flask(__name__)
 
 # Secret key for session management
-app.secret_key = os.environ.get("SECRET_KEY", "dev_secret_key_change_me")
+app.secret_key = os.environ.get("SECRET_KEY", "car_rental_dev_key")
 
 # ---- Database config ----------------------------------------------------------
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
@@ -47,6 +47,7 @@ class Reservation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ref = db.Column(db.String(36), unique=True, nullable=False, index=True)
     car_id = db.Column(db.Integer, db.ForeignKey("car.id"), nullable=False)
+    account_id = db.Column(db.Integer, db.ForeignKey("account.id"), nullable=False) # NEW: Link to user account
     name = db.Column(db.String(120), nullable=False)
     email = db.Column(db.String(200), nullable=False)
     pickup_date = db.Column(db.Date, nullable=False)
@@ -55,6 +56,7 @@ class Reservation(db.Model):
     status = db.Column(db.String(20), default='Confirmed')  # NEW: Tracks active, cancelled bookings
 
     car = db.relationship("Car")
+    account = db.relationship("Account", backref="reservations") # NEW: Relationship to Account
 
 class Account(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -227,6 +229,7 @@ def reserve_submit():
         email=email,
         pickup_date=pickup_date,
         dropoff_date=dropoff_date,
+        account_id=session.get("user_id", 0)  # Link to user account if logged in
     )
     # Mark car unavailable for this demo
     car.available = False
@@ -240,6 +243,88 @@ def reserve_submit():
 def confirm(ref):
     r = Reservation.query.filter_by(ref=ref).first_or_404()
     return render_template("confirm.html", r=r)
+
+# Cancel Reservation
+@app.route("/reservation/<ref>/cancel", methods=["POST"])
+def cancel_reservation(ref):
+    r = Reservation.query.filter_by(ref=ref).first_or_404()
+
+    if r.status == "Cancelled":
+        flash("This reservation is already cancelled.")
+        return redirect(url_for("confirm", ref=ref))
+
+    # Mark reservation as cancelled
+    r.status = "Cancelled"
+
+    # Free up the car
+    r.car.available = True
+
+    db.session.commit()
+    flash("Reservation cancelled successfully.")
+    return redirect(url_for("confirm", ref=ref))
+
+# Modify Reservation
+@app.route("/reservation/<ref>/modify", methods=["GET", "POST"])
+def modify_reservation(ref):
+    r = Reservation.query.filter_by(ref=ref).first_or_404()
+    cars = Car.query.all()
+
+    if request.method == "POST":
+        car_id = int(request.form["car_id"])
+
+        # Convert string dates to date objects
+        try:
+            pickup_date = datetime.strptime(request.form["pickup_date"], "%Y-%m-%d").date()
+            dropoff_date = datetime.strptime(request.form["dropoff_date"], "%Y-%m-%d").date()
+        except ValueError:
+            flash("Invalid date format. Please use YYYY-MM-DD.")
+            return render_template("modify_reservation.html", r=r, cars=cars, error="Invalid date format")
+
+        # Simple validation
+        if pickup_date > dropoff_date:
+            flash("Drop-off date must be after pick-up date.")
+            return render_template("modify_reservation.html", r=r, cars=cars, error="Invalid dates")
+
+        # If user changed car, make the old car available again
+        if r.car_id != car_id:
+            old_car = Car.query.get(r.car_id)
+            if old_car:
+                old_car.available = True
+
+            new_car = Car.query.get(car_id)
+            if not new_car.available and new_car.id != r.car_id:
+                flash("Selected car is no longer available.")
+                return render_template("modify_reservation.html", r=r, cars=cars, error="Car unavailable")
+            new_car.available = False
+            r.car_id = car_id
+
+        # Update dates
+        r.pickup_date = pickup_date
+        r.dropoff_date = dropoff_date
+
+        db.session.commit()
+        flash("Reservation updated successfully.")
+        return redirect(url_for("confirm", ref=ref))
+
+    return render_template("modify_reservation.html", r=r, cars=cars)
+
+# Reservations list on user account
+@app.route("/reservations")
+def reservations_list():
+    user_id = session.get("user_id")
+
+    if not user_id:
+        flash("You must be logged in to view your reservations.")
+        return render_template("reservations.html", reservations=[])
+
+    reservations = (
+        Reservation.query
+        .filter_by(account_id=user_id)
+        .order_by(Reservation.created_at.desc())
+        .all()
+    )
+
+    return render_template("reservations.html", reservations=reservations)
 
 # ---- JSON API -----------------------------------------------------------------
 @app.get("/cars")

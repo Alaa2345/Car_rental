@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Modify Reservation · Car Rental{% endblock %}
+{% block content %}
+
+<h2>Modify Reservation</h2>
+
+{% if error %}
+  <div class="alert">{{ error }}</div>
+{% endif %}
+
+<form class="reserve-from" method="post">
+  <!-- Vehicle -->
+   <div class="field">
+    <label for="car_id">Vehicle</label>
+    <select id="car_id" name="car_id" required>
+      {% for c in cars %}
+        <option value="{{ c.id }}"
+          {% if c.id == r.car_id %}selected{% endif %}
+          {% if not c.available and c.id != r.car_id %}disabled{% endif %}>
+          {{ c.label() }} — {{ c.location }} — ${{ '%.2f'|format(c.price_per_day) }}/day
+          {% if not c.available and c.id != r.car_id %}(unavailable){% endif %}
+        </option>
+      {% endfor %}
+    </select>
+    </div>
+
+    <!-- Pickup -->
+    <div class="field">
+        <label for="pickup_date">Pick-up date</label>
+        <input id="pickup_date" type="date" name="pickup_date" value="{{ r.pickup_date.strftime('%Y-%m-%d') }}" required />
+    </div>
+
+    <!-- Dropoff -->
+    <div class="field">
+        <label for="dropoff_date">Drop-off date</label>
+        <input id="dropoff_date" type="date" name="dropoff_date" value="{{ r.dropoff_date.strftime('%Y-%m-%d') }}" required />
+    </div>
+
+    <div class="actions">
+        <button type="submit">Save Changes</button>
+    </div>
+</form>
+
+<p><a href="{{ url_for('confirm', ref=r.ref) }}">Back to confirmation</a></p>
+{% endblock %}

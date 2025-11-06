@@ -58,3 +58,28 @@ a:hover{text-decoration:underline}
   display:inline-block; padding:8px 12px; border-radius:10px; border:1px solid var(--line)
 }
 .btn.primary{background:var(--brand); color:#fff; border-color:transparent}
+
+/* ---- User Messages ---- */
+.flash-messages {
+  margin: 20px;
+  padding: 10px;
+}
+.alert {
+  background: #e3f2fd;
+  color: #0d47a1;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.flash {
+  margin: 10px 0;
+}
+
+.alert {
+  padding: 10px 15px;
+  border-radius: 6px;
+  background: #d1ecf1;
+  color: #0c5460;
+  display: block; /* ensures messages stack vertically */
+}

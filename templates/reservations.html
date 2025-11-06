@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}My Reservations{% endblock %}
+{% block content %}
+  <h2>My Reservations</h2>
+
+  {% if reservations %}
+    <table>
+      <tr>
+        <th>Reference</th>
+        <th>Car</th>
+        <th>Pick-up</th>
+        <th>Drop-off</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+      {% for r in reservations %}
+      <tr>
+        <td>{{ r.ref }}</td>
+        <td>{{ r.car.label() }}</td>
+        <td>{{ r.pickup_date }}</td>
+        <td>{{ r.dropoff_date }}</td>
+        <td>{{ r.status }}</td>
+        <td>
+          <a href="{{ url_for('confirm', ref=r.ref) }}">View</a>
+          {% if r.status != 'Cancelled' %}
+          | <form action="{{ url_for('cancel_reservation', ref=r.ref) }}" method="post" style="display:inline;">
+              <button type="submit">Cancel</button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  {% else %}
+    <p>You have no reservations yet.</p>
+  {% endif %}
+{% endblock %}
