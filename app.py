@@ -110,7 +110,7 @@ def index():
     cars = apply_filters(Car.query).order_by(Car.price_per_day.asc()).all()
     return render_template("index.html", total=total, cars=cars)
 
-# Login Route
+# Login route
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -128,14 +128,14 @@ def login():
 
     return render_template("login.html")
 
-# Logout Route
+# Logout route
 @app.route("/logout")
 def logout():
     session.pop("user_id", None)
     flash("You have been logged out.", "info")
     return redirect(url_for("login"))
 
-# Account Management Route
+# Account management route
 @app.route("/account", methods=["GET", "POST"])
 def account():
     user_id = session.get("user_id")
@@ -157,6 +157,54 @@ def account():
 
     total = Car.query.count()
     return render_template("account.html", user=user, total=total)
+
+# Password reset route
+@app.route("/forgot", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "POST":
+        email = request.form.get("email")
+        user = Account.query.filter_by(email=email).first()
+
+        if not user:
+            flash("No account found with that email.", "error")
+            return redirect(url_for("forgot_password"))
+
+        session["reset_email"] = email
+        flash("Please enter a new password.", "info")
+        return redirect(url_for("reset_password"))
+
+    total = Car.query.count()
+    return render_template("forgot_password.html", total=total)
+
+# Password reset form
+@app.route("/reset", methods=["GET", "POST"])
+def reset_password():
+    email = session.get("reset_email")
+    if not email:
+        flash("Please start from the forgot password page.", "error")
+        return redirect(url_for("forgot_password"))
+
+    user = Account.query.filter_by(email=email).first()
+    if not user:
+        flash("Account not found.", "error")
+        return redirect(url_for("forgot_password"))
+
+    if request.method == "POST":
+        new_password = request.form.get("password")
+        confirm = request.form.get("confirm_password")
+
+        if new_password != confirm:
+            flash("Passwords do not match.", "error")
+            return redirect(url_for("reset_password"))
+
+        user.set_password(new_password)
+        db.session.commit()
+        session.pop("reset_email", None)
+        flash("Your password has been reset successfully!", "success")
+        return redirect(url_for("login"))
+
+    total = Car.query.count()
+    return render_template("reset_password.html", total=total)
 
 # Reservation form (GET)
 @app.get("/reserve")
@@ -244,7 +292,7 @@ def confirm(ref):
     r = Reservation.query.filter_by(ref=ref).first_or_404()
     return render_template("confirm.html", r=r)
 
-# Cancel Reservation
+# Cancel reservation
 @app.route("/reservation/<ref>/cancel", methods=["POST"])
 def cancel_reservation(ref):
     r = Reservation.query.filter_by(ref=ref).first_or_404()
@@ -263,7 +311,7 @@ def cancel_reservation(ref):
     flash("Reservation cancelled successfully.")
     return redirect(url_for("confirm", ref=ref))
 
-# Modify Reservation
+# Modify reservation
 @app.route("/reservation/<ref>/modify", methods=["GET", "POST"])
 def modify_reservation(ref):
     r = Reservation.query.filter_by(ref=ref).first_or_404()
