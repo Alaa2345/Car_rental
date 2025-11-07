@@ -8,6 +8,21 @@
   {% block head %}{% endblock %}
 </head>
 <body>
+
+<!-- Flash messages (for email simulation) -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="flash-container">
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">
+          {{ message }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+
   <header class="container">
     <h1 class="app-title">Car Rental</h1>
     <p class="muted">Total cars in database: {{ total }}</p>

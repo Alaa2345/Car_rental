@@ -103,6 +103,12 @@ def apply_filters(query):
             query = query.filter(Car.available.is_(False))
     return query
 
+# ---- Email helper functions ---------------------------------------------------
+def send_email(to, subject, body):
+    # simulate sending email by printing to console
+    print(f"--- Simulated Email ---\nTo: {to}\nSubject: {subject}\n\n{body}\n-----------------------")
+    print(f"-----------------------")
+
 # ---- Pages --------------------------------------------------------------------
 @app.route("/")
 def index():
@@ -297,25 +303,44 @@ def confirm(ref):
 def cancel_reservation(ref):
     r = Reservation.query.filter_by(ref=ref).first_or_404()
 
+    # Prevent cancelling twice
     if r.status == "Cancelled":
-        flash("This reservation is already cancelled.")
+        flash("This reservation is already cancelled.", "info")
         return redirect(url_for("confirm", ref=ref))
 
     # Mark reservation as cancelled
     r.status = "Cancelled"
 
-    # Free up the car
-    r.car.available = True
+    # Make the car available again
+    if r.car:
+        r.car.available = True
 
     db.session.commit()
-    flash("Reservation cancelled successfully.")
-    return redirect(url_for("confirm", ref=ref))
+
+    # Confirmation email simulation
+    flash("Your reservation has been cancelled, and the car is now available again.", "success")
+
+    # Simulated email confirmation of cancellation
+    send_email(
+        r.email,
+        "Your Reservation Has Been Cancelled",
+        f"Hello {r.name},\n\nYour reservation ({r.ref}) has been successfully cancelled.\n"
+        f"The vehicle {r.car.label()} is now available for others to book.\n\nThank you."
+    )
+
+    return redirect(url_for("reservations_list"))
+
 
 # Modify reservation
 @app.route("/reservation/<ref>/modify", methods=["GET", "POST"])
 def modify_reservation(ref):
     r = Reservation.query.filter_by(ref=ref).first_or_404()
     cars = Car.query.all()
+
+    if r.status == "Cancelled":
+        flash("You cannot modify a cancelled reservation.", "error")
+        return redirect(url_for("confirm", ref=ref))
+
 
     if request.method == "POST":
         car_id = int(request.form["car_id"])
@@ -328,7 +353,7 @@ def modify_reservation(ref):
             flash("Invalid date format. Please use YYYY-MM-DD.")
             return render_template("modify_reservation.html", r=r, cars=cars, error="Invalid date format")
 
-        # Simple validation
+        # Basic validation
         if pickup_date > dropoff_date:
             flash("Drop-off date must be after pick-up date.")
             return render_template("modify_reservation.html", r=r, cars=cars, error="Invalid dates")
@@ -352,6 +377,15 @@ def modify_reservation(ref):
 
         db.session.commit()
         flash("Reservation updated successfully.")
+
+        send_email(
+            r.email,
+            "Your Reservation Has Been Updated",
+            f"Hello {r.name},\n\nYour reservation ({r.ref}) has been updated:\n"
+            f"Car: {r.car.label()}\n"
+            f"Pickup: {r.pickup_date}\nDropoff: {r.dropoff_date}\n\nThank you."
+        )
+
         return redirect(url_for("confirm", ref=ref))
 
     return render_template("modify_reservation.html", r=r, cars=cars)

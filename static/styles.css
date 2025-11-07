@@ -80,6 +80,78 @@ a:hover{text-decoration:underline}
   padding: 10px 15px;
   border-radius: 6px;
   background: #d1ecf1;
-  color: #0c5460;
+  color: #2538e0;
   display: block; /* ensures messages stack vertically */
+}
+
+/* ---- Email Messages ---- */
+.flash-container {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+}
+
+.alert {
+  background: #d4edda;
+  color: #155724;
+  padding: 10px 20px;
+  margin: 10px;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  font-weight: 500;
+  animation: fadeOut 5s forwards;
+}
+
+.alert-error {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.alert-warning {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.alert-info {
+  background: #cce5ff;
+  color: #004085;
+}
+
+@keyframes fadeOut {
+  0%, 80% { opacity: 1; }
+  100% { opacity: 0; display: none; }
+}
+
+
+/* ---- Cancel & Modify ---- */
+.btn {
+  display: inline-block;
+  padding: 4px 8px;
+  margin: 0 2px;
+  font-size: 0.9rem;
+  border-radius: 4px;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+}
+
+.btn-view {
+  background-color: #e0e0e0;
+  color: #333;
+}
+
+.btn-modify {
+  background-color: #4CAF50;
+  color: white;
+}
+
+.btn-cancel {
+  background-color: #f44336;
+  color: white;
+}
+
+.btn:hover {
+  opacity: 0.85;
 }
