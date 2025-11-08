@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Confirmation · Car Rental{% endblock %}
+
 {% block content %}
   <h2>Reservation Confirmed</h2>
+
   <p><strong>Reference:</strong> {{ r.ref }}</p>
   <p><strong>Car:</strong> {{ r.car.label() }} ({{ r.car.location }})</p>
   <p><strong>Name:</strong> {{ r.name }}</p>
@@ -9,21 +11,31 @@
   <p><strong>Pick-up:</strong> {{ r.pickup_date.strftime('%Y-%m-%d') }}</p>
   <p><strong>Drop-off:</strong> {{ r.dropoff_date.strftime('%Y-%m-%d') }}</p>
 
-{% if status != "Cancelled" %}
-<form method="POST" action="{{ url_for('cancel_reservation', ref=r.ref) }}">
-    <button type="submit" onclick="return confirm('Are you sure you want to cancel this reservation?');">Cancel Reservation</button>
-</form>
+  {% set total_amount = r.car.price_per_day * ((r.dropoff_date - r.pickup_date).days) %}
+  <p><strong>Total Amount:</strong> ${{ '%.2f' % total_amount }}</p>
 
-<a href="{{ url_for('modify_reservation', ref=r.ref) }}">
-    <button type="button">Modify Reservation</button>
-</a>
+  <!-- Actions -->
+  {% if r.status != "Cancelled" %}
+    {% if not r.paid %}
+      <form method="POST" action="{{ url_for('create_checkout_session', ref=r.ref) }}">
+        <button type="submit">Pay Now</button>
+      </form>
+    {% else %}
+      <p><em>Payment received. Thank you!</em></p>
+    {% endif %}
 
-{% else %}
+    <form method="POST" action="{{ url_for('cancel_reservation', ref=r.ref) }}">
+      <button type="submit" onclick="return confirm('Are you sure you want to cancel this reservation?');">
+        Cancel Reservation
+      </button>
+    </form>
+
+    <a href="{{ url_for('modify_reservation', ref=r.ref) }}">
+      <button type="button">Modify Reservation</button>
+    </a>
+  {% else %}
     <p><em>This reservation has been cancelled.</em></p>
-{% endif %}
+  {% endif %}
 
-<p><a href="{{ url_for('index') }}">Back to search</a></p>
-
+  <p><a href="{{ url_for('index') }}">Back to search</a></p>
 {% endblock %}
-
-

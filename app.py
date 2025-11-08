@@ -3,21 +3,36 @@ from flask import Flask, render_template, request, jsonify, redirect, url_for, a
 from flask import session, flash
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_sqlalchemy import SQLAlchemy
-import os, uuid
+import os, uuid, stripe
+from dotenv import load_dotenv
 from datetime import datetime
 import click
 
 app = Flask(__name__)
 
-# Secret key for session management
-app.secret_key = os.environ.get("SECRET_KEY", "car_rental_dev_key")
+# ---- Load environment variables from .env -----------------------------------
+load_dotenv()  # make sure .env is in the same folder or provide path
 
 # ---- Database config ----------------------------------------------------------
+app.secret_key = os.getenv("SECRET_KEY", "car_rental_dev_key")
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
     "SQLALCHEMY_DATABASE_URI", "sqlite:///carrental.db"
 )
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db = SQLAlchemy(app)
+
+# ---- Stripe config ----------------------------------------------------------
+# Load Stripe keys from environment
+app.config["STRIPE_SECRET_KEY"] = os.getenv("STRIPE_SECRET_KEY")
+app.config["STRIPE_PUBLIC_KEY"] = os.getenv("STRIPE_PUBLIC_KEY")
+
+# Set the Stripe API key
+stripe.api_key = app.config["STRIPE_SECRET_KEY"]
+
+# Inject public key into templates
+@app.context_processor
+def inject_stripe_public_key():
+    return dict(STRIPE_PUBLIC_KEY=app.config["STRIPE_PUBLIC_KEY"])
 
 # ---- Models -------------------------------------------------------------------
 class Car(db.Model):
@@ -53,10 +68,12 @@ class Reservation(db.Model):
     pickup_date = db.Column(db.Date, nullable=False)
     dropoff_date = db.Column(db.Date, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    status = db.Column(db.String(20), default='Confirmed')  # NEW: Tracks active, cancelled bookings
+    status = db.Column(db.String(20), default='Confirmed') 
+    paid = db.Column(db.Boolean, default=False)  # NEW: Tracks payment status
+    payment_intent_id = db.Column(db.String(255), nullable=True) # NEW: Stripe payment intent ID
 
     car = db.relationship("Car")
-    account = db.relationship("Account", backref="reservations") # NEW: Relationship to Account
+    account = db.relationship("Account", backref="reservations")
 
 class Account(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -104,10 +121,41 @@ def apply_filters(query):
     return query
 
 # ---- Email helper functions ---------------------------------------------------
-def send_email(to, subject, body):
-    # simulate sending email by printing to console
-    print(f"--- Simulated Email ---\nTo: {to}\nSubject: {subject}\n\n{body}\n-----------------------")
-    print(f"-----------------------")
+def send_email(to, subject, body, email_type="general", amount=None, ref=None):
+    """
+    Simulates Stripe-style emails in the console for dev/test mode.
+    email_type: 'payment', 'refund', or 'general'
+    """
+    header = "\n====== STRIPE EMAIL SIMULATION ======"
+    footer = "=====================================\n"
+
+    if email_type == "payment":
+        subject = subject or "Payment Receipt"
+        body = (
+            f"Hi there,\n\n"
+            f"We've successfully processed your payment.\n\n"
+            f"Reservation Reference: {ref or 'N/A'}\n"
+            f"Amount Charged: ${amount:.2f}\n\n"
+            f"{body}\n"
+            "Thank you for choosing our car rental service!\n"
+        )
+
+    elif email_type == "refund":
+        subject = subject or "Refund Processed"
+        body = (
+            f"Hi there,\n\n"
+            f"Your refund has been issued successfully.\n\n"
+            f"Reservation Reference: {ref or 'N/A'}\n"
+            f"Amount Refunded: ${amount:.2f}\n\n"
+            f"{body}\n"
+            "We're sorry to see you cancel, and we hope to serve you again!\n"
+        )
+
+    else:
+        subject = subject or "Notification"
+        body = f"{body}\n\nThank you!"
+
+    print(f"{header}\nTo: {to}\nSubject: {subject}\n\n{body}\n{footer}")
 
 # ---- Pages --------------------------------------------------------------------
 @app.route("/")
@@ -116,7 +164,142 @@ def index():
     cars = apply_filters(Car.query).order_by(Car.price_per_day.asc()).all()
     return render_template("index.html", total=total, cars=cars)
 
-# Login route
+# ---- Payment routes ----------------------------------------------------------
+@app.route("/create-checkout-session/<ref>", methods=["POST"])
+def create_checkout_session(ref):
+    reservation = Reservation.query.filter_by(ref=ref).first_or_404()
+
+    # Prevent duplicate or invalid payments
+    if reservation.status == "Cancelled":
+        flash("Cannot pay for a cancelled reservation.", "error")
+        return redirect(url_for("confirm", ref=ref))
+
+    if getattr(reservation, "paid", False):
+        flash("This reservation has already been paid.", "info")
+        return redirect(url_for("confirm", ref=ref))
+
+    try:
+        # Calculate total amount in cents
+        days = (reservation.dropoff_date - reservation.pickup_date).days
+        amount_cents = int(reservation.car.price_per_day * days * 100)
+
+        # Create Stripe checkout session
+        checkout_session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=[{
+                "price_data": {
+                    "currency": "cad",
+                    "product_data": {
+                        "name": f"{reservation.car.label()} Rental",
+                    },
+                    "unit_amount": amount_cents,
+                },
+                "quantity": 1,
+            }],
+            mode="payment",
+            success_url=url_for("payment_success", _external=True) + f"?ref={ref}&session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=url_for("confirm", ref=ref, _external=True),
+            customer_email=reservation.email,
+        )
+
+        # Save session id (optional, for tracking)
+        reservation.payment_intent_id = checkout_session.payment_intent
+        db.session.commit()
+
+        return redirect(checkout_session.url, code=303)
+
+    except Exception as e:
+        flash(f"Error creating checkout session: {str(e)}", "error")
+        return redirect(url_for("confirm", ref=ref))
+    
+@app.route("/payment/success")
+def payment_success():
+    ref = request.args.get("ref")
+    session_id = request.args.get("session_id")
+    reservation = Reservation.query.filter_by(ref=ref).first_or_404()
+
+    if reservation.paid:
+        flash("Payment already processed.", "info")
+        return redirect(url_for("reservations_list"))
+
+    try:
+        # Retrieve the completed checkout session from Stripe
+        checkout_session = stripe.checkout.Session.retrieve(session_id)
+
+        # Save the PaymentIntent ID for potential refunds
+        reservation.payment_intent_id = checkout_session.payment_intent
+        reservation.status = "Confirmed"
+        reservation.paid = True
+        db.session.commit()
+
+        # Calculate amount
+        days = (reservation.dropoff_date - reservation.pickup_date).days
+        amount = days * reservation.car.price_per_day
+
+        # Simulate Stripe receipt email
+        send_email(
+            reservation.email,
+            subject="Your Payment Was Successful",
+            body=f"Your booking for {reservation.car.label()} from "
+                 f"{reservation.pickup_date} to {reservation.dropoff_date} is confirmed.",
+            email_type="payment",
+            amount=amount,
+            ref=reservation.ref
+        )
+
+        flash("Payment successful! Your reservation has been confirmed.", "success")
+
+    except Exception as e:
+        flash(f"Error processing payment confirmation: {str(e)}", "error")
+
+    return redirect(url_for("reservations_list"))
+
+@app.route("/reservation/<ref>/cancel", methods=["POST"])
+def cancel_reservation(ref):
+    reservation = Reservation.query.filter_by(ref=ref).first_or_404()
+
+    if reservation.status == "Cancelled":
+        flash("This reservation has already been cancelled.", "info")
+        return redirect(url_for("reservations_list"))
+
+    try:
+        # Calculate amount for refund/email
+        days = (reservation.dropoff_date - reservation.pickup_date).days
+        amount = days * reservation.car.price_per_day
+
+        if reservation.payment_intent_id:
+            # Refund via Stripe
+            refund = stripe.Refund.create(payment_intent=reservation.payment_intent_id)
+
+            if refund.status != "succeeded":
+                flash("Refund failed. Please contact support.", "error")
+                return redirect(url_for("reservations_list"))
+
+        # Update reservation and car only after successful refund or no payment
+        reservation.status = "Cancelled"
+        reservation.car.available = True
+        db.session.commit()
+
+        # Send simulated refund email
+        send_email(
+            reservation.email,
+            subject="Your Refund Has Been Processed",
+            body=f"Your booking for {reservation.car.label()} from "
+                 f"{reservation.pickup_date} to {reservation.dropoff_date} has been cancelled successfully.",
+            email_type="refund",
+            amount=amount,
+            ref=reservation.ref
+        )
+
+        flash("Reservation cancelled and refund processed.", "success")
+
+    except Exception as e:
+        flash(f"Error cancelling reservation: {str(e)}", "error")
+        print(f"Error during cancellation: {e}", flush=True)
+
+    return redirect(url_for("reservations_list"))
+
+# ---- Login route --------------------------------------------------------------------
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -141,7 +324,8 @@ def logout():
     flash("You have been logged out.", "info")
     return redirect(url_for("login"))
 
-# Account management route
+
+# ---- Account management route ---------------------------------------------------------------
 @app.route("/account", methods=["GET", "POST"])
 def account():
     user_id = session.get("user_id")
@@ -164,7 +348,7 @@ def account():
     total = Car.query.count()
     return render_template("account.html", user=user, total=total)
 
-# Password reset route
+# ---- Password reset route ---------------------------------------------------------------
 @app.route("/forgot", methods=["GET", "POST"])
 def forgot_password():
     if request.method == "POST":
@@ -215,7 +399,11 @@ def reset_password():
 # Reservation form (GET)
 @app.get("/reserve")
 def reserve_form():
-    # optional ?car_id=...
+    if "user_id" not in session:
+        flash("Please log in to reserve a car.", "warning")
+        # redirect back here after login
+        return redirect(url_for("login", next=request.url))
+    
     car_id = request.args.get("car_id", type=int)
     car = Car.query.get(car_id) if car_id else None
     cars = Car.query.order_by(Car.make, Car.model).all()
@@ -224,6 +412,11 @@ def reserve_form():
 # Reservation submit (POST)
 @app.post("/reserve")
 def reserve_submit():
+    if "user_id" not in session:
+        flash("Please log in to reserve a car.", "warning")
+        # redirect back here after login
+        return redirect(url_for("login", next=request.url))
+    
     car_id = request.form.get("car_id", type=int)
     name = (request.form.get("name") or "").strip()
     email = (request.form.get("email") or "").strip()
@@ -296,42 +489,14 @@ def reserve_submit():
 @app.get("/confirm/<ref>")
 def confirm(ref):
     r = Reservation.query.filter_by(ref=ref).first_or_404()
-    return render_template("confirm.html", r=r)
 
-# Cancel reservation
-@app.route("/reservation/<ref>/cancel", methods=["POST"])
-def cancel_reservation(ref):
-    r = Reservation.query.filter_by(ref=ref).first_or_404()
+    # Calculate total rental amount
+    days = (r.dropoff_date - r.pickup_date).days
+    total_amount = r.car.price_per_day * days
 
-    # Prevent cancelling twice
-    if r.status == "Cancelled":
-        flash("This reservation is already cancelled.", "info")
-        return redirect(url_for("confirm", ref=ref))
+    return render_template("confirm.html", r=r, total_amount=total_amount)
 
-    # Mark reservation as cancelled
-    r.status = "Cancelled"
-
-    # Make the car available again
-    if r.car:
-        r.car.available = True
-
-    db.session.commit()
-
-    # Confirmation email simulation
-    flash("Your reservation has been cancelled, and the car is now available again.", "success")
-
-    # Simulated email confirmation of cancellation
-    send_email(
-        r.email,
-        "Your Reservation Has Been Cancelled",
-        f"Hello {r.name},\n\nYour reservation ({r.ref}) has been successfully cancelled.\n"
-        f"The vehicle {r.car.label()} is now available for others to book.\n\nThank you."
-    )
-
-    return redirect(url_for("reservations_list"))
-
-
-# Modify reservation
+# ---- Modify reservation route ---------------------------------------------------------------
 @app.route("/reservation/<ref>/modify", methods=["GET", "POST"])
 def modify_reservation(ref):
     r = Reservation.query.filter_by(ref=ref).first_or_404()

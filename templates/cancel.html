@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Payment Cancelled{% endblock %}
+{% block content %}
+  <h2>Payment Cancelled</h2>
+  <p>Your payment was not completed, and your reservation has been cancelled.</p>
+
+  <p><strong>Reference:</strong> {{ reservation.ref }}</p>
+  <a href="{{ url_for('reservations_list') }}">Back to My Reservations</a>
+{% endblock %}

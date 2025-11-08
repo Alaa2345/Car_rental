@@ -42,6 +42,12 @@
     </nav>
     <hr class="divider">
   </header>
+  
+<!-- Stripe -->
+<script src="https://js.stripe.com/v3/"></script>
+<script>
+    const stripe = Stripe("{{ STRIPE_PUBLIC_KEY }}");
+</script>
 
 <!-- Flash messages -->
 {% with messages = get_flashed_messages(with_categories=true) %}
@@ -65,4 +71,5 @@
     <p>Sample app for demo purposes.</p>
   </footer>
 </body>
+
 </html>

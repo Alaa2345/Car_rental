@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Payment Success{% endblock %}
+{% block content %}
+  <h2>Payment Successful</h2>
+  <p><strong>Reservation Ref:</strong> {{ reservation.ref }}</p>
+  <p><strong>Car:</strong> {{ reservation.car.label() }}</p>
+  <p><strong>Pickup:</strong> {{ reservation.pickup_date }}</p>
+  <p><strong>Dropoff:</strong> {{ reservation.dropoff_date }}</p>
+ 
+  <p><strong>Payment ID:</strong> {{ payment_id }}</p>
+
+  <p>We’ve emailed you a copy of your receipt.</p>
+
+  <a href="{{ url_for('reservations_list') }}">Back to My Reservations</a>
+{% endblock %}
