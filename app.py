@@ -169,7 +169,7 @@ def index():
 def create_checkout_session(ref):
     reservation = Reservation.query.filter_by(ref=ref).first_or_404()
 
-    # Prevent duplicate or invalid payments
+    # Prevent duplicate or invalid payments (mainly for database safety)
     if reservation.status == "Cancelled":
         flash("Cannot pay for a cancelled reservation.", "error")
         return redirect(url_for("confirm", ref=ref))
@@ -275,23 +275,42 @@ def cancel_reservation(ref):
                 flash("Refund failed. Please contact support.", "error")
                 return redirect(url_for("reservations_list"))
 
-        # Update reservation and car only after successful refund or no payment
-        reservation.status = "Cancelled"
-        reservation.car.available = True
-        db.session.commit()
+            # Update reservation and car only after successful refund or no payment
+            reservation.status = "Cancelled"
+            reservation.car.available = True
+            db.session.commit()
 
-        # Send simulated refund email
-        send_email(
-            reservation.email,
-            subject="Your Refund Has Been Processed",
-            body=f"Your booking for {reservation.car.label()} from "
-                 f"{reservation.pickup_date} to {reservation.dropoff_date} has been cancelled successfully.",
-            email_type="refund",
-            amount=amount,
-            ref=reservation.ref
-        )
+            # Send simulated refund email
+            send_email(
+                reservation.email,
+                subject="Your Refund Has Been Processed",
+                body=f"Your booking for {reservation.car.label()} from "
+                    f"{reservation.pickup_date} to {reservation.dropoff_date} has been cancelled successfully.",
+                email_type="refund",
+                amount=amount,
+                ref=reservation.ref
+            )
 
-        flash("Reservation cancelled and refund processed.", "success")
+            flash("Reservation cancelled and refund processed.", "success")
+        
+        else:
+            # No payment made; just cancel the reservation
+            reservation.status = "Cancelled"
+            reservation.car.available = True
+            db.session.commit()
+
+            # Send simulated cancel email
+            send_email(
+                reservation.email,
+                subject="Your Reservation Has Been Cancelled",
+                body=f"Your booking for {reservation.car.label()} from "
+                    f"{reservation.pickup_date} to {reservation.dropoff_date} has been cancelled successfully.",
+                email_type="refund",
+                amount=amount,
+                ref=reservation.ref
+            )
+            
+            flash("Reservation cancelled successfully.", "success")
 
     except Exception as e:
         flash(f"Error cancelling reservation: {str(e)}", "error")
@@ -505,7 +524,6 @@ def modify_reservation(ref):
     if r.status == "Cancelled":
         flash("You cannot modify a cancelled reservation.", "error")
         return redirect(url_for("confirm", ref=ref))
-
 
     if request.method == "POST":
         car_id = int(request.form["car_id"])
