@@ -228,13 +228,19 @@ def payment_success():
     session_id = request.args.get("session_id")
     reservation = Reservation.query.filter_by(ref=ref).first_or_404()
 
-    if reservation.paid:
-        flash("Payment already processed.", "info")
-        return redirect(url_for("reservations_list"))
-
     try:
         # Retrieve the completed checkout session from Stripe
         checkout_session = stripe.checkout.Session.retrieve(session_id)
+
+        # Verify payment status
+        if checkout_session.payment_status != "paid":
+            flash("Payment not completed.", "error")
+            return redirect(url_for("confirm", ref=ref))
+
+        # Prevent duplicate processing
+        if reservation.paid:
+            flash("Payment already processed.", "info")
+            return redirect(url_for("reservations_list"))
 
         # Save the PaymentIntent ID for potential refunds
         reservation.payment_intent_id = checkout_session.payment_intent
@@ -244,7 +250,7 @@ def payment_success():
 
         # Calculate amount
         days = (reservation.dropoff_date - reservation.pickup_date).days
-        amount = days * reservation.car.price_per_day
+        amount = float(days) * float(reservation.car.price_per_day)
 
         # Simulate Stripe receipt email
         send_email(
@@ -261,6 +267,7 @@ def payment_success():
 
     except Exception as e:
         flash(f"Error processing payment confirmation: {str(e)}", "error")
+        print(f"Error during payment success: {e}", flush=True)
 
     return redirect(url_for("reservations_list"))
 
