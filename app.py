@@ -151,6 +151,16 @@ def send_email(to, subject, body, email_type="general", amount=None, ref=None):
             "We're sorry to see you cancel, and we hope to serve you again!\n"
         )
 
+    elif email_type == "cancel":
+        subject = subject or "Cancel Processed"
+        body = (
+            f"Hi there,\n\n"
+            f"Your cancel has been issued successfully.\n\n"
+            f"Reservation Reference: {ref or 'N/A'}\n"
+            f"{body}\n"
+            "We're sorry to see you cancel, and we hope to serve you again!\n"
+        )
+
     else:
         subject = subject or "Notification"
         body = f"{body}\n\nThank you!"
@@ -305,7 +315,7 @@ def cancel_reservation(ref):
                 subject="Your Reservation Has Been Cancelled",
                 body=f"Your booking for {reservation.car.label()} from "
                     f"{reservation.pickup_date} to {reservation.dropoff_date} has been cancelled successfully.",
-                email_type="refund",
+                email_type="cancel",
                 amount=amount,
                 ref=reservation.ref
             )
