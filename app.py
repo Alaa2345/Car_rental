@@ -13,6 +13,10 @@ app = Flask(__name__)
 # ---- Load environment variables from .env -----------------------------------
 load_dotenv()  # make sure .env is in the same folder or provide path
 
+# Manager credentials (defaults can be overridden via environment variables)
+MANAGER_USERNAME = os.getenv("MANAGER_USERNAME", "manager")
+MANAGER_PASSWORD = os.getenv("MANAGER_PASSWORD", "manager123")
+
 # ---- Database config ----------------------------------------------------------
 app.secret_key = os.getenv("SECRET_KEY", "car_rental_dev_key")
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
@@ -151,16 +155,6 @@ def send_email(to, subject, body, email_type="general", amount=None, ref=None):
             "We're sorry to see you cancel, and we hope to serve you again!\n"
         )
 
-    elif email_type == "cancel":
-        subject = subject or "Cancel Processed"
-        body = (
-            f"Hi there,\n\n"
-            f"Your cancel has been issued successfully.\n\n"
-            f"Reservation Reference: {ref or 'N/A'}\n"
-            f"{body}\n"
-            "We're sorry to see you cancel, and we hope to serve you again!\n"
-        )
-
     else:
         subject = subject or "Notification"
         body = f"{body}\n\nThank you!"
@@ -179,7 +173,7 @@ def index():
 def create_checkout_session(ref):
     reservation = Reservation.query.filter_by(ref=ref).first_or_404()
 
-    # Prevent duplicate or invalid payments (mainly for database safety)
+    # Prevent duplicate or invalid payments
     if reservation.status == "Cancelled":
         flash("Cannot pay for a cancelled reservation.", "error")
         return redirect(url_for("confirm", ref=ref))
@@ -228,19 +222,13 @@ def payment_success():
     session_id = request.args.get("session_id")
     reservation = Reservation.query.filter_by(ref=ref).first_or_404()
 
+    if reservation.paid:
+        flash("Payment already processed.", "info")
+        return redirect(url_for("reservations_list"))
+
     try:
         # Retrieve the completed checkout session from Stripe
         checkout_session = stripe.checkout.Session.retrieve(session_id)
-
-        # Verify payment status
-        if checkout_session.payment_status != "paid":
-            flash("Payment not completed.", "error")
-            return redirect(url_for("confirm", ref=ref))
-
-        # Prevent duplicate processing
-        if reservation.paid:
-            flash("Payment already processed.", "info")
-            return redirect(url_for("reservations_list"))
 
         # Save the PaymentIntent ID for potential refunds
         reservation.payment_intent_id = checkout_session.payment_intent
@@ -250,7 +238,7 @@ def payment_success():
 
         # Calculate amount
         days = (reservation.dropoff_date - reservation.pickup_date).days
-        amount = float(days) * float(reservation.car.price_per_day)
+        amount = days * reservation.car.price_per_day
 
         # Simulate Stripe receipt email
         send_email(
@@ -267,7 +255,6 @@ def payment_success():
 
     except Exception as e:
         flash(f"Error processing payment confirmation: {str(e)}", "error")
-        print(f"Error during payment success: {e}", flush=True)
 
     return redirect(url_for("reservations_list"))
 
@@ -292,42 +279,23 @@ def cancel_reservation(ref):
                 flash("Refund failed. Please contact support.", "error")
                 return redirect(url_for("reservations_list"))
 
-            # Update reservation and car only after successful refund or no payment
-            reservation.status = "Cancelled"
-            reservation.car.available = True
-            db.session.commit()
+        # Update reservation and car only after successful refund or no payment
+        reservation.status = "Cancelled"
+        reservation.car.available = True
+        db.session.commit()
 
-            # Send simulated refund email
-            send_email(
-                reservation.email,
-                subject="Your Refund Has Been Processed",
-                body=f"Your booking for {reservation.car.label()} from "
-                    f"{reservation.pickup_date} to {reservation.dropoff_date} has been cancelled successfully.",
-                email_type="refund",
-                amount=amount,
-                ref=reservation.ref
-            )
+        # Send simulated refund email
+        send_email(
+            reservation.email,
+            subject="Your Refund Has Been Processed",
+            body=f"Your booking for {reservation.car.label()} from "
+                 f"{reservation.pickup_date} to {reservation.dropoff_date} has been cancelled successfully.",
+            email_type="refund",
+            amount=amount,
+            ref=reservation.ref
+        )
 
-            flash("Reservation cancelled and refund processed.", "success")
-        
-        else:
-            # No payment made; just cancel the reservation
-            reservation.status = "Cancelled"
-            reservation.car.available = True
-            db.session.commit()
-
-            # Send simulated cancel email
-            send_email(
-                reservation.email,
-                subject="Your Reservation Has Been Cancelled",
-                body=f"Your booking for {reservation.car.label()} from "
-                    f"{reservation.pickup_date} to {reservation.dropoff_date} has been cancelled successfully.",
-                email_type="cancel",
-                amount=amount,
-                ref=reservation.ref
-            )
-            
-            flash("Reservation cancelled successfully.", "success")
+        flash("Reservation cancelled and refund processed.", "success")
 
     except Exception as e:
         flash(f"Error cancelling reservation: {str(e)}", "error")
@@ -542,6 +510,7 @@ def modify_reservation(ref):
         flash("You cannot modify a cancelled reservation.", "error")
         return redirect(url_for("confirm", ref=ref))
 
+
     if request.method == "POST":
         car_id = int(request.form["car_id"])
 
@@ -607,6 +576,76 @@ def reservations_list():
     )
 
     return render_template("reservations.html", reservations=reservations)
+
+# ---- Revenue reporting helper & endpoints ------------------------------------
+from collections import defaultdict
+from datetime import date as _date
+
+def generate_revenue_report(start_date: _date, end_date: _date):
+    """
+    Aggregates revenue for paid reservations whose pickup_date falls within [start_date, end_date].
+    Returns a dict with totals, by_month, by_car and by_location breakdowns.
+    """
+    reservations = Reservation.query.filter(
+        Reservation.paid.is_(True),
+        Reservation.pickup_date >= start_date,
+        Reservation.pickup_date <= end_date
+    ).all()
+
+    total = 0.0
+    by_month = defaultdict(float)
+    by_car = defaultdict(float)
+    by_location = defaultdict(float)
+
+    for r in reservations:
+        days = (r.dropoff_date - r.pickup_date).days
+        amount = days * (r.car.price_per_day or 0)
+        total += amount
+        month_key = r.pickup_date.strftime("%Y-%m")
+        by_month[month_key] += amount
+        by_car[r.car.label()] += amount
+        by_location[r.car.location] += amount
+
+    # format results
+    by_month = dict(sorted(by_month.items()))
+    by_car_list = sorted([{"car": k, "revenue": round(v, 2)} for k, v in by_car.items()], key=lambda x: -x["revenue"])
+    by_location = {k: round(v, 2) for k, v in sorted(by_location.items(), key=lambda it: -it[1])}
+
+    return {
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "total_revenue": round(total, 2),
+        "total_reservations": len(reservations),
+        "by_month": {k: round(v, 2) for k, v in by_month.items()},
+        "by_car": by_car_list,
+        "by_location": by_location,
+    }
+
+@app.route("/reports")
+def reports():
+    """
+    JSON revenue report endpoint.
+    Required query params:
+      - start=YYYY-MM-DD
+    Optional:
+      - end=YYYY-MM-DD  (defaults to today)
+    Example:
+      GET /reports?start=2025-01-01&end=2025-06-30
+    """
+    start = request.args.get("start")
+    end = request.args.get("end")
+
+    if not start:
+        abort(400, "start parameter required (YYYY-MM-DD)")
+
+    try:
+        start_date = datetime.strptime(start, "%Y-%m-%d").date()
+        end_date = datetime.strptime(end, "%Y-%m-%d").date() if end else datetime.utcnow().date()
+    except ValueError:
+        abort(400, "Invalid date format. Use YYYY-MM-DD.")
+
+    report = generate_revenue_report(start_date, end_date)
+    return jsonify(report)
 
 # ---- JSON API -----------------------------------------------------------------
 @app.get("/cars")
@@ -676,6 +715,105 @@ def inject_user():
     user_id = session.get("user_id")
     user = Account.query.get(user_id) if user_id else None
     return dict(current_user=user)
+
+# ---- Manager routes --------------------------------------------------------------------
+@app.route("/manager-login", methods=["GET", "POST"])
+def manager_login():
+    """
+    Simple manager login using default credentials (override via env).
+    Successful login sets session['manager_logged_in'].
+    """
+    if request.method == "POST":
+        username = (request.form.get("username") or "").strip()
+        password = (request.form.get("password") or "").strip()
+        if username == MANAGER_USERNAME and password == MANAGER_PASSWORD:
+            session["manager_logged_in"] = True
+            flash("Manager signed in.", "success")
+            return redirect(url_for("manager_reports"))
+        flash("Invalid manager credentials.", "error")
+    return render_template("manager_login.html")
+
+
+@app.route("/manager/logout")
+def manager_logout():
+    session.pop("manager_logged_in", None)
+    flash("Manager signed out.", "info")
+    return redirect(url_for("index"))
+
+
+@app.route("/manager/reports", methods=["GET", "POST"])
+def manager_reports():
+    """
+    Manager report UI: shows a clean report (HTML) when manager is logged in.
+    GET: show form. POST: generate report using start/end and render nicely.
+    """
+    if not session.get("manager_logged_in"):
+        flash("Manager access required.", "warning")
+        return redirect(url_for("manager_login"))
+
+    report = None
+    error = None
+
+    if request.method == "POST":
+        start = (request.form.get("start") or "").strip()
+        end = (request.form.get("end") or "").strip()
+
+        if not start:
+            error = "Start date is required."
+        else:
+            try:
+                start_date = datetime.strptime(start, "%Y-%m-%d").date()
+                end_date = datetime.strptime(end, "%Y-%m-%d").date() if end else datetime.utcnow().date()
+                today = datetime.utcnow().date()
+
+                # New validation: start date cannot be in the future
+                if start_date > today:
+                    error = "Start date cannot be in the future."
+                else:
+                    report = generate_revenue_report(start_date, end_date)
+            except ValueError:
+                error = "Invalid date format. Use YYYY-MM-DD."
+
+    return render_template("manager_reports.html", report=report, error=error)
+
+@app.cli.command("clear-reservations")
+def clear_reservations():
+    """Delete all reservations and mark cars available again."""
+    with app.app_context():
+        count = Reservation.query.count()
+        for r in Reservation.query.all():
+            car = Car.query.get(r.car_id)
+            if car:
+                car.available = True
+            db.session.delete(r)
+        db.session.commit()
+        click.echo(f"Deleted {count} reservations and updated car availability.")
+
+@app.route("/admin/vehicle_usage")
+def vehicle_usage_report():
+    """
+    Vehicle usage report for managers - shows rental frequency per car
+    """
+    if not session.get("manager_logged_in"):
+        flash("Manager access required.", "warning")
+        return redirect(url_for("manager_login"))
+    
+    # Query all cars and their rental counts
+    cars = Car.query.all()
+    
+    usage_data = []
+    for car in cars:
+        rental_count = Reservation.query.filter_by(car_id=car.id).count()
+        usage_data.append({
+            "car": car,
+            "rental_count": rental_count
+        })
+
+    # Sort by most rented
+    usage_data = sorted(usage_data, key=lambda x: x["rental_count"], reverse=True)
+
+    return render_template("manager_vehicle_usage.html", usage_data=usage_data)
+
 
 if __name__ == "__main__":
     app.run(debug=True)

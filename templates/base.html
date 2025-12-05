@@ -28,21 +28,22 @@
     <p class="muted">Total cars in database: {{ total }}</p>
     <nav class="muted small">
       <a href="{{ url_for('index') }}">Home</a> ·
-      <a href="{{ url_for('list_cars') }}">/api/cars</a>
+      <a href="{{ url_for('list_cars') }}">| /api/cars</a>
 
   {% if current_user %}
     <a href="{{ url_for('account') }}">Account ({{ current_user.username }})</a> ·
     <a href="{{ url_for('logout') }}">Logout</a>
   {% else %}
-    <a href="{{ url_for('login') }}">Login</a>
+    <a href="{{ url_for('login') }}">| User Login </a>
+  <a href="{{ url_for('manager_login') }}">| Manager login </a>
+</div>
+
   {% endif %}
 
-  <a href="{{ url_for('reservations_list') }}">Reservations</a>
+  <a href="{{ url_for('reservations_list') }}">| Reservations</a>
   
-    </nav>
-    <hr class="divider">
-  </header>
-  
+
+
 <!-- Stripe -->
 <script src="https://js.stripe.com/v3/"></script>
 <script>

@@ -1,0 +1,90 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Manager — Revenue Reports</title>
+    <style>
+      body { font-family: sans-serif; padding: 1.5rem; color:#222; }
+      .wrap { max-width:900px; margin:0 auto; }
+      form { display:flex; gap:0.5rem; align-items:center; margin-bottom:1rem; flex-wrap:wrap; }
+      table { border-collapse: collapse; width:100%; margin-top:1rem; }
+      th, td { border:1px solid #ddd; padding:0.5rem; text-align:left; }
+      th { background:#f7f7f7; }
+      .small { font-size:0.9rem; color:#555; }
+      .actions { margin-top:0.75rem; }
+      .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; }
+    </style>
+  </head>
+  <body>
+    <div style="margin:1rem 0;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+        <h2 style="margin:0;">Revenue Reports</h2>
+        <div>
+          <a href="{{ url_for('vehicle_usage_report') }}" style="margin-right:1rem;">Vehicle Usage</a>
+          <a href="{{ url_for('manager_logout') }}">Sign out</a>
+        </div>
+      </div>
+
+      <form method="post" action="{{ url_for('manager_reports') }}" style="margin-bottom:0.5rem;">
+        <label>Start <input type="date" name="start" required></label>
+        <label style="margin-left:0.5rem;">End <input type="date" name="end"></label>
+        <button type="submit" style="margin-left:0.5rem;">Generate</button>
+        <div style="margin-top:0.25rem;font-size:0.9rem;">Leave end empty to use today.</div>
+      </form>
+
+      {% if error %}
+        <div style="margin-bottom:0.5rem;">{{ error }}</div>
+      {% endif %}
+
+      {% if report %}
+        <h3>Summary</h3>
+        <table class="table" style="width:100%;margin-bottom:0.75rem;">
+          <tbody>
+            <tr><th style="text-align:left;width:30%;padding:6px;">Start</th><td style="padding:6px;">{{ report.start_date }}</td></tr>
+            <tr><th style="text-align:left;padding:6px;">End</th><td style="padding:6px;">{{ report.end_date }}</td></tr>
+            <tr><th style="text-align:left;padding:6px;">Total Revenue</th><td style="padding:6px;">${{ '%.2f'|format(report.total_revenue) }}</td></tr>
+            <tr><th style="text-align:left;padding:6px;">Total Paid Reservations</th><td style="padding:6px;">{{ report.total_reservations }}</td></tr>
+          </tbody>
+        </table>
+
+        <h4 style="margin-top:1rem;">By Month</h4>
+        <table class="table" style="width:100%;margin-bottom:0.75rem;">
+          <thead>
+            <tr><th style="text-align:left;width:30%;padding:6px;">Month</th><th style="text-align:left;padding:6px;">Revenue</th></tr>
+          </thead>
+          <tbody>
+            {% for month, rev in report.by_month.items() %}
+              <tr><td style="padding:6px;">{{ month }}</td><td style="padding:6px;">${{ '%.2f'|format(rev) }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+
+        <h4 style="margin-top:1rem;">By Car</h4>
+        <table class="table" style="width:100%;margin-bottom:0.75rem;">
+          <thead>
+            <tr><th style="text-align:left;width:30%;padding:6px;">Car</th><th style="text-align:left;padding:6px;">Revenue</th></tr>
+          </thead>
+          <tbody>
+            {% for item in report.by_car %}
+              <tr><td style="padding:6px;">{{ item.car }}</td><td style="padding:6px;">${{ '%.2f'|format(item.revenue) }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+
+        <h4 style="margin-top:1rem;">By Location</h4>
+        <table class="table" style="width:100%;margin-bottom:0.75rem;">
+          <thead>
+            <tr><th style="text-align:left;width:30%;padding:6px;">Location</th><th style="text-align:left;padding:6px;">Revenue</th></tr>
+          </thead>
+          <tbody>
+            {% for loc, rev in report.by_location.items() %}
+              <tr><td style="padding:6px;">{{ loc }}</td><td style="padding:6px;">${{ '%.2f'|format(rev) }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div style="margin-top:0.5rem;">No report generated yet. Use the form above.</div>
+      {% endif %}
+    </div>
+  </body>
+</html>
